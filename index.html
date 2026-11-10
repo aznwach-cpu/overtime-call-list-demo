@@ -1,0 +1,856 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{color-scheme:light}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Overtime Call List</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: two working panes (live call list | call-out console) over a fairness strip, rules, and the append-only ledger */
+:root{
+  --bg:#EDF0F2; --surface:#FFFFFF; --sunk:#F5F7F8; --ink:#1A2027; --muted:#5A6672; --line:#D3D9DE;
+  --accent:#D9822B; --on-accent:#1A2027; --accent-soft:#FBE9D5;
+  --ok:#2D7A4E; --ok-soft:#DDF0E4; --warn:#8F5500; --warn-soft:#FBEBCF; --bad:#B3261E; --bad-soft:#F8DEDB;
+  --c-worked:#2F5D8A; --c-refused:#D9A25B; --c-noanswer:#9AA6B1; --c-start:#C4CDD5;
+  --f-display:'Barlow Condensed','Arial Narrow',sans-serif;
+  --f-body:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --f-mono:'IBM Plex Mono',ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11161B; --surface:#192027; --sunk:#141A20; --ink:#E5EAEE; --muted:#97A3AE; --line:#2B353F;
+  --accent:#E99A47; --on-accent:#11161B; --accent-soft:#3A2A18;
+  --ok:#6CCB93; --ok-soft:#173326; --warn:#E8B460; --warn-soft:#3A2D14; --bad:#F1857C; --bad-soft:#3D1D1B;
+  --c-worked:#6F9CCB; --c-refused:#C99550; --c-noanswer:#6B7783; --c-start:#3A4550; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11161B; --surface:#192027; --sunk:#141A20; --ink:#E5EAEE; --muted:#97A3AE; --line:#2B353F;
+  --accent:#E99A47; --on-accent:#11161B; --accent-soft:#3A2A18;
+  --ok:#6CCB93; --ok-soft:#173326; --warn:#E8B460; --warn-soft:#3A2D14; --bad:#F1857C; --bad-soft:#3D1D1B;
+  --c-worked:#6F9CCB; --c-refused:#C99550; --c-noanswer:#6B7783; --c-start:#3A4550; color-scheme:dark}
+
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.5}
+.wrap{max-width:1240px;margin:0 auto;padding-block:28px 48px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;flex-direction:column;gap:20px}
+h1,h2,h3{font-family:var(--f-display);font-weight:700;letter-spacing:.01em;text-wrap:balance;margin:0;line-height:1.1}
+h1{font-size:2.6rem}
+h2{font-size:1.45rem}
+h3{font-size:1.1rem}
+p{margin:0}
+.num,.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.eyebrow{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.muted{color:var(--muted)}
+.small{font-size:.82rem}
+
+header.top{display:flex;flex-wrap:wrap;gap:16px 32px;align-items:flex-end;justify-content:space-between}
+header.top .intro{display:flex;flex-direction:column;gap:8px;max-width:68ch;min-width:0}
+.legend-rule{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:.84rem;color:var(--muted)}
+.legend-rule b{color:var(--ink);font-weight:600}
+
+.grid2{display:grid;grid-template-columns:minmax(0,1fr);gap:20px}
+@media (min-width:980px){.grid2{grid-template-columns:minmax(0,1fr) minmax(0,1.08fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:18px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.panel-head{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:baseline;justify-content:space-between}
+
+.tabs{display:inline-flex;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+.tabs button{border:0;background:transparent;color:var(--muted);font:600 .82rem var(--f-body);padding:6px 12px;cursor:pointer}
+.tabs button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+th{font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td.r,th.r{text-align:right}
+.pos{font-family:var(--f-display);font-size:1.3rem;font-weight:700;color:var(--muted);width:2.2em}
+.who b{font-weight:600}
+.who .meta{display:block;font-size:.76rem;color:var(--muted)}
+.splits{font-size:.76rem;color:var(--muted);white-space:nowrap}
+.big{font-size:1.02rem;font-weight:500}
+tr.next td{background:var(--accent-soft)}
+tr.next .pos{color:var(--ink)}
+tr.dim td{color:var(--muted)}
+
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:.74rem;font-weight:600;padding:2px 8px;border-radius:99px;white-space:nowrap;border:1px solid transparent}
+.chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.s-ok{background:var(--ok-soft);color:var(--ok)}
+.s-warn{background:var(--warn-soft);color:var(--warn)}
+.s-bad{background:var(--bad-soft);color:var(--bad)}
+.s-neutral{background:var(--sunk);color:var(--muted);border-color:var(--line)}
+.s-accent{background:var(--accent-soft);color:var(--warn)}
+.why{display:block;font-size:.74rem;color:var(--muted);margin-top:3px;max-width:30ch}
+.skipflag{display:block;font-size:.74rem;color:var(--bad);font-weight:600;margin-top:3px}
+
+.btn{font:600 .8rem var(--f-body);padding:6px 11px;border-radius:5px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--muted)}
+.btn:focus-visible,.tabs button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.ok{color:var(--ok);border-color:var(--ok)}
+.btn.no{color:var(--bad);border-color:var(--bad)}
+.btn.ghost{background:transparent}
+.btn.tiny{padding:3px 8px;font-size:.74rem}
+.acts{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+
+.opp-head{display:grid;gap:10px;background:var(--sunk);border:1px solid var(--line);border-radius:5px;padding:12px 14px}
+.opp-title{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline;justify-content:space-between}
+.facts{display:flex;flex-wrap:wrap;gap:6px 22px}
+.fact{display:flex;flex-direction:column}
+.fact span:first-child{font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.fact span:last-child{font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-size:.9rem}
+.callout{border-radius:5px;padding:10px 12px;font-size:.86rem;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between}
+.callout.ok{background:var(--ok-soft);color:var(--ok)}
+.callout.warn{background:var(--warn-soft);color:var(--warn)}
+.callout.bad{background:var(--bad-soft);color:var(--bad)}
+
+form.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;align-items:end}
+label{display:flex;flex-direction:column;gap:4px;font-size:.74rem;font-weight:600;color:var(--muted);letter-spacing:.02em}
+input,select{font:400 .88rem var(--f-body);color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:6px 8px;min-width:0}
+details{border-top:1px solid var(--line);padding-top:12px}
+summary{cursor:pointer;font-weight:600;font-size:.88rem}
+details[open] summary{margin-bottom:12px}
+
+.fair{display:grid;grid-template-columns:minmax(0,1fr);gap:20px}
+@media (min-width:760px){.fair{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+.fair-list{display:flex;flex-direction:column;gap:7px}
+.bar-row{display:grid;grid-template-columns:minmax(90px,9.5em) minmax(0,1fr) 3.4em;gap:10px;align-items:center;font-size:.82rem}
+.bar-row .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.track{position:relative;height:16px;background:var(--sunk);border-radius:3px;display:flex;overflow:visible}
+.seg{height:100%}
+.seg.worked{background:var(--c-worked)}
+.seg.refused{background:var(--c-refused)}
+.seg.noanswer{background:var(--c-noanswer)}
+.seg.start{background:repeating-linear-gradient(135deg,var(--c-start) 0 4px,transparent 4px 7px);border:1px solid var(--c-start);box-sizing:border-box}
+.seg:first-child{border-radius:3px 0 0 3px}
+.mean{position:absolute;top:-4px;bottom:-4px;width:0;border-left:2px dashed var(--ink);opacity:.55}
+.keys{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.76rem;color:var(--muted)}
+.key{display:inline-flex;align-items:center;gap:6px}
+.key i{width:12px;height:10px;border-radius:2px;display:inline-block}
+.key i.worked{background:var(--c-worked)} .key i.refused{background:var(--c-refused)} .key i.noanswer{background:var(--c-noanswer)}
+.key i.start{background:repeating-linear-gradient(135deg,var(--c-start) 0 3px,transparent 3px 5px);border:1px solid var(--c-start)}
+.key i.meanline{width:0;height:12px;border-left:2px dashed var(--ink);border-radius:0;opacity:.55}
+
+.ledger-wrap{max-height:440px;overflow:auto;border:1px solid var(--line);border-radius:5px}
+.ledger-wrap table th{position:sticky;top:0;background:var(--surface)}
+tr.rev td{color:var(--muted)}
+.neg{color:var(--bad)}
+.note{font-size:.76rem;color:var(--muted)}
+.note.flag{color:var(--bad);font-weight:600}
+
+.toolbar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end;justify-content:space-between}
+.weeknav{display:flex;align-items:center;gap:8px}
+.weeknav .mono{font-size:.9rem}
+.standing{background:var(--sunk);border:1px solid var(--line);border-radius:5px;padding:10px 12px;font-size:.88rem}
+.tsheet td.day b{font-family:var(--f-display);font-size:1.05rem}
+.tsheet .meta{display:block;font-size:.74rem;color:var(--muted)}
+.tsheet tfoot td{border-top:2px solid var(--ink);font-weight:600}
+fieldset{border:0;padding:0;margin:0;min-width:0}
+fieldset.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;align-items:end}
+fieldset:disabled{opacity:.55}
+.errs{margin:8px 0 0;padding-left:18px;color:var(--bad);font-size:.84rem}
+.errs:empty{display:none}
+.submitbar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding-top:12px}
+.appr-list{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+@media (min-width:980px){.appr-list{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+.appr{border:1px solid var(--line);border-radius:5px;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.issues{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;font-size:.84rem}
+.issues li{padding:6px 10px;border-radius:4px}
+.issues li.ok{background:var(--ok-soft);color:var(--ok)}
+.issues li.warn{background:var(--warn-soft);color:var(--warn)}
+.issues li.bad{background:var(--bad-soft);color:var(--bad)}
+.appr .acts{justify-content:flex-start;align-items:flex-end}
+.appr .acts label{flex:1 1 180px}
+.status{min-height:1.4em;font-size:.84rem;color:var(--ok);font-weight:500}
+@media (prefers-reduced-motion:no-preference){tr.flash td{animation:flash 1.2s ease-out}
+  @keyframes flash{from{background:var(--accent-soft)}to{background:transparent}}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div class="intro">
+      <span class="eyebrow">Overtime equalization · interactive demo with example crew</span>
+      <h1>Overtime Call List</h1>
+      <p class="muted">Overtime goes to the person with the fewest <b>charged hours</b> first. Accepting <em>and</em> refusing both add charged hours, so whoever has taken the most overtime sits at the bottom of the list. Ties go to seniority.</p>
+      <div class="legend-rule">
+        <span><b>Accepted</b> charges the hours worked</span>
+        <span><b>Refused</b> charges the offered hours</span>
+        <span><b>Not eligible</b> charges nothing</span>
+        <span><b>Approved timesheet</b> corrects the charge to the hours actually worked</span>
+      </div>
+    </div>
+    <button class="btn ghost" id="reset" data-act="reset">Reset demo data</button>
+  </header>
+
+  <p class="status" id="status" role="status" aria-live="polite"></p>
+
+  <div class="grid2">
+    <section class="panel" aria-labelledby="h-list">
+      <div class="panel-head">
+        <div><span class="eyebrow">Live standing</span><h2 id="h-list">Call list</h2></div>
+        <div class="tabs" id="tabs"></div>
+      </div>
+      <div class="tbl-wrap"><table id="list"></table></div>
+      <p class="small muted">The list is calculated from the ledger every time. Nobody edits a balance directly. Toggle leave to see eligibility change.</p>
+    </section>
+
+    <section class="panel" aria-labelledby="h-console">
+      <div class="panel-head">
+        <div><span class="eyebrow">Call-out console</span><h2 id="h-console">Offer overtime</h2></div>
+        <label class="small">Opportunity
+          <select id="oppSel"></select>
+        </label>
+      </div>
+      <div id="console"></div>
+      <details id="newOppBox">
+        <summary>New overtime opportunity</summary>
+        <form class="row" id="newOpp">
+          <label>Work<input id="o-label" required value="Call-out: air compressor K-2 trip"></label>
+          <label>Trade<select id="o-trade"><option value="MECH">Mechanical</option><option value="ELEC">Electrical</option></select></label>
+          <label>Date<input id="o-date" type="date" required value="2026-11-12"></label>
+          <label>Hours<input id="o-hours" type="number" min="1" max="16" step="0.5" required value="6"></label>
+          <label>People needed<input id="o-need" type="number" min="1" max="6" required value="1"></label>
+          <button class="btn primary" type="submit">Build call list</button>
+        </form>
+      </details>
+    </section>
+  </div>
+
+  <section class="panel" aria-labelledby="h-time">
+    <div class="panel-head">
+      <div><span class="eyebrow">Self-service</span><h2 id="h-time">Timesheets</h2></div>
+      <div class="tabs" id="timeTabs"></div>
+    </div>
+
+    <div id="mineBox" class="panel-body">
+      <div class="toolbar">
+        <label>Signed in as (demo stand-in for login)<select id="t-me"></select></label>
+        <div class="weeknav">
+          <button class="btn tiny" data-act="wk" data-d="-7" aria-label="Previous week">‹</button>
+          <span class="mono" id="weekLabel"></span>
+          <button class="btn tiny" data-act="wk" data-d="7" aria-label="Next week">›</button>
+          <span id="weekStatus"></span>
+        </div>
+      </div>
+      <p class="standing" id="standing"></p>
+      <div id="rejectNote"></div>
+      <div class="tbl-wrap"><table class="tsheet" id="tsheet"></table></div>
+      <p class="small muted">Base time is 40 h a week. Every hour past 40 in the week is paid at 1.5×, in the order the hours were worked, whatever the entry type. A call-list job worked in a short week can therefore be paid at straight time, while it still counts on the call list. Daily rules are off by default and can be set under Rules.</p>
+      <form id="entry">
+        <fieldset id="entryFs" class="row">
+          <label>Day<select id="t-date"></select></label>
+          <label>Start<input id="t-start" type="time" value="07:00" required></label>
+          <label>Finish<input id="t-end" type="time" value="15:30" required></label>
+          <label>Unpaid break (min)<input id="t-brk" type="number" min="0" max="120" step="5" value="30"></label>
+          <label>Type<select id="t-type"><option value="reg">Regular shift</option><option value="ot-list">Overtime · call list</option><option value="ot-unplanned">Overtime · unplanned</option></select></label>
+          <label id="t-opp-l" hidden>Call-list job<select id="t-opp"></select></label>
+          <label>Note<input id="t-note" placeholder="Work done, or why it was needed"></label>
+          <button class="btn primary" type="submit">Add entry</button>
+        </fieldset>
+        <ul class="errs" id="t-errs"></ul>
+      </form>
+      <div class="submitbar">
+        <span class="small muted" id="submitHint"></span>
+        <button class="btn primary" id="submitWeek" data-act="submit-week">Submit week for approval</button>
+      </div>
+    </div>
+
+    <div id="apprBox" hidden></div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-fair">
+    <div class="panel-head">
+      <div><span class="eyebrow">Fairness</span><h2 id="h-fair">Charged hours, this period</h2></div>
+      <div class="keys">
+        <span class="key"><i class="worked"></i>Worked</span>
+        <span class="key"><i class="refused"></i>Refused</span>
+        <span class="key"><i class="noanswer"></i>No answer</span>
+        <span class="key"><i class="start"></i>Starting balance</span>
+        <span class="key"><i class="meanline"></i>List average</span>
+      </div>
+    </div>
+    <div class="fair" id="fair"></div>
+  </section>
+
+  <div class="grid2">
+    <section class="panel" aria-labelledby="h-rules">
+      <div><span class="eyebrow">Agreement settings</span><h2 id="h-rules">Rules</h2></div>
+      <form class="row" id="rules">
+        <label>A refusal charges<select id="r-refusal"><option value="offered">The offered hours</option><option value="zero">Nothing</option></select></label>
+        <label>No answer charges<select id="r-noanswer"><option value="offered">The offered hours</option><option value="zero">Nothing</option></select></label>
+        <label>Tie-break<select id="r-tiebreak"><option value="seniority">Seniority</option><option value="number">Employee number</option></select></label>
+        <label>Minimum rest (h)<input id="r-minRest" type="number" min="0" max="16" step="1"></label>
+        <label>Tolerance (h)<input id="r-tolerance" type="number" min="4" max="100" step="2"></label>
+        <label>New starter begins at<select id="r-newHire"><option value="average">List average</option><option value="highest">Highest + 1</option><option value="zero">Zero</option></select></label>
+        <label>Base time per week (h)<input id="r-weeklyOT" type="number" min="0" max="80" step="1"></label>
+        <label>Daily overtime after (h, 0 = off)<input id="r-dailyOT" type="number" min="0" max="24" step="0.5"></label>
+        <label>Double time after (h/day, 0 = off)<input id="r-dailyDT" type="number" min="0" max="24" step="0.5"></label>
+      </form>
+      <p class="small muted">A rule change applies from the next offer and the next opportunity. Entries already in the ledger keep the rule that charged them.</p>
+      <details>
+        <summary>Add a new starter</summary>
+        <form class="row" id="hire">
+          <label>Name<input id="h-name" required value="Ade Mensah"></label>
+          <label>Trade<select id="h-trade"><option value="MECH">Mechanical</option><option value="ELEC">Electrical</option></select></label>
+          <button class="btn primary" type="submit">Add to list</button>
+        </form>
+        <p class="small muted">A new starter at zero would get every offer until they caught up, so the starting balance follows the rule above.</p>
+      </details>
+    </section>
+
+    <section class="panel" aria-labelledby="h-ledger">
+      <div class="panel-head">
+        <div><span class="eyebrow">Append-only</span><h2 id="h-ledger">Charge ledger</h2></div>
+        <span class="small muted" id="ledgerCount"></span>
+      </div>
+      <div class="ledger-wrap"><table id="ledger"></table></div>
+      <p class="small muted">Corrections never edit a row. <b>Reverse</b> adds an opposite entry, and the list recalculates.</p>
+    </section>
+  </div>
+</div>
+
+<script>
+const KEY = 'ot-call-list-demo-v3';
+const TRADES = { MECH: 'Mechanical', ELEC: 'Electrical' };
+const TODAY = '2026-11-10';
+let S;
+
+const pad = n => String(n).padStart(2, '0');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const h = n => { const v = Math.round(n * 10) / 10; return (Number.isInteger(v) ? v : v.toFixed(1)); };
+function stamp() { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+const emp = id => S.emps.find(e => e.id === id);
+const oppById = id => S.opps.find(o => o.id === id);
+
+function addL(empId, kind, hours, oppId, label, note, ts) {
+  const r = { id: S.seq++, ts: ts || stamp(), empId, kind, hours, oppId: oppId || '', label: label || '', note: note || '' };
+  S.ledger.push(r); return r;
+}
+function totals(id) {
+  const t = { worked: 0, refused: 0, noanswer: 0, start: 0 };
+  for (const r of S.ledger) if (r.empId === id) t[r.kind] += r.hours;
+  t.total = t.worked + t.refused + t.noanswer + t.start;
+  return t;
+}
+function ranked(trade) {
+  return S.emps.filter(e => e.trade === trade)
+    .map(e => ({ e, c: totals(e.id).total }))
+    .sort((a, b) => (a.c - b.c) ||
+      (S.rules.tiebreak === 'seniority' ? a.e.sen.localeCompare(b.e.sen) : 0) ||
+      (a.e.no - b.e.no));
+}
+function ineligible(e, date) {
+  if (e.onLeave) return 'On leave';
+  if (e.rest < S.rules.minRest) return `Only ${e.rest} h since last shift (rule: ${S.rules.minRest} h rest)`;
+  if (date && S.opps.some(o => o.date === date && o.status !== 'cancelled' && o.rows.some(r => r.empId === e.id && (r.outcome === 'accepted' || r.outcome === 'forced'))))
+    return 'Already working overtime that day';
+  return '';
+}
+
+function createOpp(f, ts) {
+  const list = ranked(f.trade);
+  const o = {
+    id: 'OT-' + String(S.oppSeq++).padStart(4, '0'), ...f, created: ts || stamp(), status: 'open',
+    rows: list.map((x, i) => {
+      const why = ineligible(x.e, f.date);
+      return { empId: x.e.id, pos: i + 1, chargedAt: x.c, why, outcome: why ? 'ineligible' : 'pending', skip: '', ts: '', charged: 0 };
+    })
+  };
+  S.opps.push(o); return o;
+}
+function settle(o) {
+  const acc = o.rows.filter(r => r.outcome === 'accepted' || r.outcome === 'forced').length;
+  if (acc >= o.needed) {
+    o.status = 'filled';
+    o.rows.forEach(r => { if (r.outcome === 'pending') r.outcome = 'notreached'; });
+  }
+}
+function record(oppId, empId, outcome, ts) {
+  const o = oppById(oppId); if (!o || o.status !== 'open') return;
+  const r = o.rows.find(x => x.empId === empId); if (!r || r.outcome !== 'pending') return;
+  const above = o.rows.filter(x => x.pos < r.pos && x.outcome === 'pending');
+  if (above.length) r.skip = 'Offered ahead of ' + above.map(x => emp(x.empId).name).join(', ');
+  r.outcome = outcome; r.ts = ts || stamp();
+  let kind, hrs, note = '';
+  if (outcome === 'accepted') { kind = 'worked'; hrs = o.hours; }
+  else {
+    kind = outcome;
+    const rule = outcome === 'refused' ? S.rules.refusal : S.rules.noanswer;
+    hrs = rule === 'offered' ? o.hours : 0;
+    if (!hrs) note = 'Recorded, not charged under current rule';
+  }
+  if (r.skip) note = (note ? note + '. ' : '') + 'SKIP: ' + r.skip;
+  r.charged = hrs;
+  addL(empId, kind, hrs, o.id, o.label, note, r.ts);
+  settle(o);
+  const e = emp(empId);
+  return `${e.name}: ${outcome === 'accepted' ? 'accepted' : outcome === 'refused' ? 'refused' : 'no answer'}, charged ${h(hrs)} h` + (r.skip ? '. Flagged as a skip.' : '.');
+}
+function force(oppId) {
+  const o = oppById(oppId); if (!o || o.status !== 'open' || o.rows.some(r => r.outcome === 'pending')) return;
+  const c = o.rows.filter(r => r.outcome === 'refused' || r.outcome === 'noanswer')
+    .sort((a, b) => emp(b.empId).sen.localeCompare(emp(a.empId).sen))[0];
+  if (!c) { o.status = 'short'; return 'Nobody eligible is left on this list. Go to the next crew.'; }
+  const ts = stamp();
+  if (c.charged) addL(c.empId, c.outcome, -c.charged, o.id, o.label, 'Refusal charge replaced by forced assignment', ts);
+  c.outcome = 'forced'; c.charged = o.hours; c.ts = ts;
+  addL(c.empId, 'worked', o.hours, o.id, o.label, 'Forced assignment (least senior who declined)', ts);
+  settle(o);
+  return `${emp(c.empId).name} was forced as the least senior person who declined.`;
+}
+function reverse(id) {
+  const r = S.ledger.find(x => x.id === id);
+  if (!r || r.reverses || r.reversedBy || !r.hours) return;
+  const n = addL(r.empId, r.kind, -r.hours, r.oppId, r.label, 'Correction: reverses entry #' + r.id);
+  n.reverses = r.id; r.reversedBy = n.id;
+  return `Entry #${r.id} reversed. ${emp(r.empId).name} is ${h(r.hours)} h lighter.`;
+}
+function hire(name, trade) {
+  const list = ranked(trade).map(x => x.c);
+  let start = 0, note = 'Starting balance: zero';
+  if (S.rules.newHire === 'average' && list.length) { start = Math.round(list.reduce((a, b) => a + b, 0) / list.length * 2) / 2; note = 'Starting balance: list average'; }
+  if (S.rules.newHire === 'highest' && list.length) { start = Math.max(...list) + 1; note = 'Starting balance: highest + 1'; }
+  const id = 'n' + S.seq;
+  S.emps.push({ id, no: 11000 + S.emps.length, name, trade, sen: TODAY, rest: 24, onLeave: false });
+  addL(id, 'start', start, '', '', note);
+  return `${name} joins the ${TRADES[trade]} list at ${h(start)} h.`;
+}
+
+function seed() {
+  S = { rules: { refusal: 'offered', noanswer: 'offered', tiebreak: 'seniority', minRest: 10, tolerance: 24, newHire: 'average', dailyOT: 0, dailyDT: 0, weeklyOT: 40 },
+        emps: [], ledger: [], opps: [], seq: 1, oppSeq: 1, active: null, tab: 'MECH',
+        weeks: {}, tseq: 1, timeTab: 'mine', me: 'm1', week: '2026-11-09' };
+  const E = (id, no, name, trade, sen, rest, onLeave = false) => S.emps.push({ id, no, name, trade, sen, rest, onLeave });
+  E('m1', 10231, 'Dana Whitfield', 'MECH', '2008-04-07', 16);
+  E('m2', 10318, 'Luis Ortega', 'MECH', '2011-09-19', 14);
+  E('m3', 10402, 'Priya Raman', 'MECH', '2014-02-03', 22);
+  E('m4', 10477, 'Marcus Bell', 'MECH', '2016-06-27', 16);
+  E('m5', 10590, 'Hannah Kowalski', 'MECH', '2019-01-14', 18);
+  E('m6', 10731, 'Tomás Reyes', 'MECH', '2021-08-02', 6);
+  E('m7', 10866, 'Grace Oyelaran', 'MECH', '2023-03-20', 20);
+  E('e1', 10274, 'Ken Matsuda', 'ELEC', '2010-05-11', 15);
+  E('e2', 10365, 'Rachel Doyle', 'ELEC', '2013-10-28', 19);
+  E('e3', 10509, 'Samir Haddad', 'ELEC', '2017-07-17', 24, true);
+  E('e4', 10688, 'Olivia Brandt', 'ELEC', '2020-11-09', 17);
+  E('e5', 10802, 'Jordan Pike', 'ELEC', '2022-04-04', 21);
+  const H = {
+    m1: 'W12 W8 W10 W12 W10 W10 R8', m2: 'W10 W12 W8 W10 R12 N4', m3: 'W12 W10 W8 W12 W10',
+    m4: 'W12 W8 W12 W12 R8', m5: 'W12 W12 W12 R12', m6: 'W10 W12 W8 N4', m7: 'S38 W8',
+    e1: 'W12 W10 W12 W12 W12', e2: 'W12 W12 W12 R8 R8', e3: 'W12 W12 W10 W10', e4: 'W10 W10 W10 W10 N4', e5: 'W12 W8 W10 W8'
+  };
+  const MECH = ['Call-out: pump P-204A seal leak', 'Weekend: cooling tower fan gearbox', 'Holdover: compressor K-3 trip', 'Shutdown support: exchanger E-110', 'Call-out: conveyor CV-12 belt tear'];
+  const ELEC = ['Call-out: MCC-4 breaker trip', 'Planned: substation thermography', 'Call-out: lighting panel LP-7 fault', 'Weekend: VFD replacement on fan F-9'];
+  const KIND = { W: 'worked', R: 'refused', N: 'noanswer', S: 'start' };
+  let k = 0;
+  Object.entries(H).forEach(([id, str], ei) => {
+    const e = emp(id), pool = e.trade === 'MECH' ? MECH : ELEC;
+    str.split(' ').forEach((tok, i) => {
+      const kind = KIND[tok[0]], hrs = +tok.slice(1);
+      const ts = kind === 'start' ? e.sen : `2026-${pad(1 + ((i * 3 + ei) % 10))}-${pad(3 + ((i * 7 + ei * 5) % 24))}`;
+      addL(id, kind, hrs, '', kind === 'start' ? '' : pool[k++ % pool.length], kind === 'start' ? 'Starting balance: list average' : '', ts);
+    });
+  });
+  S.ledger.sort((a, b) => a.ts.localeCompare(b.ts));
+  S.ledger.forEach((r, i) => r.id = i + 1);
+  S.seq = S.ledger.length + 1;
+  const o1 = createOpp({ trade: 'ELEC', date: '2026-11-07', hours: 8, needed: 1, label: 'Call-out: MCC-4 breaker trip' }, '2026-11-07 02:14');
+  record(o1.id, 'e5', 'accepted', '2026-11-07 02:20');
+  const o2 = createOpp({ trade: 'MECH', date: '2026-11-14', hours: 10, needed: 2, label: 'Weekend: boiler feed pump P-301 overhaul' }, '2026-11-10 07:30');
+  S.active = o2.id;
+
+  const T = (id, ws, status, list, extra = {}) => {
+    const w = week(id, ws, true); Object.assign(w, { status }, extra);
+    list.forEach(([date, start, end, brk, type, opp, note]) => w.entries.push({ id: 'T' + S.tseq++, date, start, end, brk, type, opp: opp || '', note: note || '' }));
+  };
+  const days = (ws, n) => Array.from({ length: n }, (_, i) => [addDays(ws, i), '07:00', '15:30', 30, 'reg']);
+  T('e5', '2026-11-02', 'submitted', [...days('2026-11-02', 5), ['2026-11-07', '02:10', '11:40', 0, 'ot-list', 'OT-0001', 'Breaker reset, cable termination replaced']], { submittedAt: '2026-11-09 08:05' });
+  T('m5', '2026-11-02', 'submitted', [...days('2026-11-02', 5), ['2026-11-06', '15:30', '19:00', 0, 'ot-unplanned', '', 'Call-in: conveyor CV-12 belt tear, line down']], { submittedAt: '2026-11-09 09:40' });
+  T('m2', '2026-11-02', 'approved', days('2026-11-02', 5), { submittedAt: '2026-11-06 16:00', decidedAt: '2026-11-09 07:45' });
+  T('m1', '2026-11-09', 'draft', [...days('2026-11-09', 2), ['2026-11-10', '15:30', '18:00', 0, 'ot-unplanned', '', 'Holdover: finish P-204A seal, unit down']]);
+}
+
+/* ---------- timesheets ---------- */
+const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const TYPE = { reg: ['s-neutral', 'Regular shift'], 'ot-list': ['s-accent', 'Overtime · call list'], 'ot-unplanned': ['s-warn', 'Overtime · unplanned'] };
+const WSTAT = { draft: ['s-neutral', 'Draft'], submitted: ['s-accent', 'Submitted'], approved: ['s-ok', 'Approved'], rejected: ['s-bad', 'Returned for changes'] };
+const toMin = t => { const [a, b] = t.split(':').map(Number); return a * 60 + b; };
+const dayNum = d => Math.round(Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) / 86400000);
+const fromDay = n => new Date(n * 86400000).toISOString().slice(0, 10);
+const addDays = (d, k) => fromDay(dayNum(d) + k);
+const weekStart = d => { const n = dayNum(d); return fromDay(n - ((new Date(n * 86400000).getUTCDay() + 6) % 7)); };
+/* A finish at or before the start means the shift ran past midnight; it stays on the day it started. */
+function span(x) { const s = dayNum(x.date) * 1440 + toMin(x.start); let e = dayNum(x.date) * 1440 + toMin(x.end); if (e <= s) e += 1440; return [s, e]; }
+const entryHours = x => { const [s, e] = span(x); return Math.max(0, (e - s - (+x.brk || 0)) / 60); };
+const wkKey = (id, ws) => id + '|' + ws;
+function week(id, ws, create) {
+  let w = S.weeks[wkKey(id, ws)];
+  if (!w && create) w = S.weeks[wkKey(id, ws)] = { empId: id, ws, status: 'draft', reason: '', entries: [], submittedAt: '', decidedAt: '' };
+  return w;
+}
+const editable = w => !w || w.status === 'draft' || w.status === 'rejected';
+
+/* Hours in time order: past the daily threshold is 1.5x, past the double-time threshold is 2x, and straight time
+   past the weekly threshold becomes 1.5x. An hour is counted in one bucket only. */
+function payCalc(w) {
+  /* 0 switches a daily rule off. Base time is the weekly threshold (40 h by default). */
+  const R = S.rules, dOT = +R.dailyOT > 0 ? +R.dailyOT : Infinity;
+  let dDT = +R.dailyDT > 0 ? +R.dailyDT : Infinity; if (dDT <= dOT && dOT !== Infinity) dDT = dOT + 0.25;
+  const wOT = Math.max(0, +R.weeklyOT);
+  const out = { st: 0, ot: 0, dt: 0, total: 0, per: {} }, dayTot = {};
+  let ws = 0;
+  for (const x of [...w.entries].sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start))) {
+    let rem = entryHours(x), d = dayTot[x.date] || 0, st = 0, ot = 0, dt = 0;
+    while (rem > 1e-9) {
+      if (d >= dDT) { dt += rem; d += rem; rem = 0; break; }
+      if (d >= dOT) { const c = Math.min(rem, dDT - d); ot += c; d += c; rem -= c; continue; }
+      const c = Math.min(rem, dOT - d, dDT - d), s = Math.max(0, Math.min(c, wOT - ws));
+      st += s; ws += s; ot += c - s; d += c; rem -= c;
+    }
+    dayTot[x.date] = d; out.per[x.id] = { st, ot, dt };
+    out.st += st; out.ot += ot; out.dt += dt;
+  }
+  out.total = out.st + out.ot + out.dt;
+  return out;
+}
+function myOpps(id) { return S.opps.filter(o => o.rows.some(r => r.empId === id && (r.outcome === 'accepted' || r.outcome === 'forced'))); }
+function validate(id, w, x, ignoreId) {
+  const errs = [];
+  if (!x.date || !x.start || !x.end) { errs.push('Day, start and finish are required.'); return errs; }
+  if (x.date > TODAY) errs.push('Time is entered after it is worked, and that day is in the future.');
+  if (x.start === x.end) errs.push('Start and finish are the same.');
+  const hrs = entryHours(x);
+  if (hrs <= 0) errs.push('The break is as long as the shift.');
+  if (hrs > 16) errs.push('One entry cannot be longer than 16 hours.');
+  const [s, e] = span(x);
+  for (const ww of Object.values(S.weeks)) {
+    if (ww.empId !== id) continue;
+    for (const y of ww.entries) { if (y.id === ignoreId) continue; const [a, b] = span(y); if (s < b && a < e) errs.push(`It overlaps your entry on ${y.date}, ${y.start}–${y.end}.`); }
+  }
+  const dayHrs = w.entries.filter(y => y.date === x.date && y.id !== ignoreId).reduce((a, y) => a + entryHours(y), 0) + hrs;
+  if (dayHrs > 16) errs.push(`That makes ${h(dayHrs)} h on ${x.date}. The limit is 16 h in a day.`);
+  if (x.type === 'ot-list') {
+    const o = oppById(x.opp);
+    if (!o) errs.push('Pick the call-list job you accepted.');
+    else if (o.date !== x.date && addDays(o.date, -1) !== x.date) errs.push(`${o.id} is on ${o.date}, but this entry is dated ${x.date}.`);
+  }
+  if (x.type === 'ot-unplanned' && !x.note.trim()) errs.push('Unplanned overtime needs a note saying why it was needed.');
+  return errs;
+}
+function issues(w) {
+  const out = [], byOpp = {};
+  w.entries.filter(x => x.type === 'ot-list').forEach(x => byOpp[x.opp] = (byOpp[x.opp] || 0) + entryHours(x));
+  for (const [oid, hrs] of Object.entries(byOpp)) {
+    const o = oppById(oid); if (!o) continue;
+    if (Math.abs(hrs - o.hours) > 1e-9) out.push(['warn', `${oid}: offered ${h(o.hours)} h, entered ${h(hrs)} h. Approving corrects the call-list charge by ${hrs > o.hours ? '+' : ''}${h(hrs - o.hours)} h.`]);
+    else out.push(['ok', `${oid}: entered hours match the ${h(o.hours)} h offered.`]);
+  }
+  w.entries.filter(x => x.type === 'ot-unplanned').forEach(x => out.push(['warn', `${h(entryHours(x))} h unplanned overtime on ${x.date}: "${x.note}". Approving charges it to the call list.`]));
+  const p = payCalc(w);
+  if (p.dt) out.push(['bad', `${h(p.dt)} h at double time (more than ${S.rules.dailyDT} h in a day).`]);
+  if (!out.length) out.push(['ok', 'No overtime this week.']);
+  return out;
+}
+function submitWeek() {
+  const w = week(S.me, S.week);
+  if (!w || !editable(w) || !w.entries.length) return 'Add at least one entry before submitting.';
+  for (const x of w.entries) { const e = validate(S.me, w, x, x.id); if (e.length) return `Fix the entry on ${x.date} first: ${e[0]}`; }
+  w.status = 'submitted'; w.reason = ''; w.submittedAt = stamp();
+  return 'Week submitted. Your supervisor will see it under Approvals.';
+}
+function approve(key) {
+  const w = S.weeks[key]; if (!w || w.status !== 'submitted') return;
+  w.status = 'approved'; w.decidedAt = stamp();
+  const ts = w.decidedAt, e = emp(w.empId), posted = [];
+  const approvedEntries = Object.values(S.weeks).filter(x => x.empId === w.empId && x.status === 'approved').flatMap(x => x.entries);
+  for (const oid of new Set(w.entries.filter(x => x.type === 'ot-list').map(x => x.opp))) {
+    const o = oppById(oid), r = o && o.rows.find(y => y.empId === w.empId); if (!r) continue;
+    const actual = approvedEntries.filter(x => x.type === 'ot-list' && x.opp === oid).reduce((a, x) => a + entryHours(x), 0);
+    const diff = actual - r.charged - (r.adjusted || 0);
+    if (Math.abs(diff) > 1e-9) {
+      addL(w.empId, 'worked', diff, oid, o.label, `Corrected to actual on approved timesheet: offered ${h(o.hours)} h, worked ${h(actual)} h`, ts);
+      r.adjusted = (r.adjusted || 0) + diff; posted.push(`${diff > 0 ? '+' : ''}${h(diff)} h on ${oid}`);
+    }
+  }
+  for (const x of w.entries.filter(x => x.type === 'ot-unplanned')) {
+    addL(w.empId, 'worked', entryHours(x), '', x.note, `Unplanned overtime from approved timesheet (${x.date})`, ts);
+    posted.push(`+${h(entryHours(x))} h unplanned`);
+  }
+  return `${e.name}'s week approved.` + (posted.length ? ` Call list charged: ${posted.join(', ')}.` : ' No call-list change.');
+}
+function reject(key, reason) {
+  const w = S.weeks[key]; if (!w || w.status !== 'submitted') return;
+  if (!reason) return 'Add a reason so the person knows what to fix.';
+  w.status = 'rejected'; w.reason = reason; w.decidedAt = stamp();
+  return `${emp(w.empId).name}'s week returned for changes.`;
+}
+
+function renderTime() {
+  const pending = Object.values(S.weeks).filter(w => w.status === 'submitted').length;
+  document.getElementById('timeTabs').innerHTML = [['mine', 'My timesheet'], ['approve', `Approvals (${pending})`]].map(([k, v]) =>
+    `<button type="button" data-act="ttab" data-tab="${k}" aria-pressed="${S.timeTab === k}">${v}</button>`).join('');
+  document.getElementById('mineBox').hidden = S.timeTab !== 'mine';
+  document.getElementById('apprBox').hidden = S.timeTab !== 'approve';
+
+  const me = emp(S.me) || S.emps[0]; S.me = me.id;
+  document.getElementById('t-me').innerHTML = S.emps.map(e => `<option value="${e.id}" ${e.id === S.me ? 'selected' : ''}>${esc(e.name)} · ${TRADES[e.trade]}</option>`).join('');
+  const w = week(S.me, S.week) || { status: 'draft', entries: [], reason: '' }, canEdit = editable(w);
+  document.getElementById('weekLabel').textContent = `${S.week} to ${addDays(S.week, 6)}`;
+  const st = WSTAT[w.status];
+  document.getElementById('weekStatus').innerHTML = `<span class="chip ${st[0]}">${st[1]}</span>`;
+
+  const list = ranked(me.trade), pos = list.findIndex(x => x.e.id === me.id) + 1;
+  let sl = `You are <b>#${pos} of ${list.length}</b> on the ${TRADES[me.trade]} call list with <b class="num">${h(list[pos - 1].c)} h</b> charged.`;
+  if (pos === 1) sl += ' You will be offered the next overtime first if you are eligible.';
+  S.opps.filter(o => o.status === 'open').forEach(o => { const r = o.rows.find(y => y.empId === me.id && y.outcome === 'pending'); if (r) sl += ` ${o.id} (${o.date}) is being called now, and you are #${r.pos} on it.`; });
+  document.getElementById('standing').innerHTML = sl;
+  document.getElementById('rejectNote').innerHTML = w.status === 'rejected' ? `<div class="callout bad">Returned by your supervisor: ${esc(w.reason)}. Fix the entries and submit again.</div>` : '';
+
+  const pay = payCalc(w); let body = '';
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(S.week, i), ents = w.entries.filter(x => x.date === d).sort((a, b) => a.start.localeCompare(b.start));
+    const lbl = n => `<td class="day" rowspan="${n}"><b>${DOW[i]}</b><span class="meta mono">${d.slice(5)}</span></td>`;
+    if (!ents.length) { body += `<tr class="dim">${lbl(1)}<td colspan="7" class="small">No time entered</td></tr>`; continue; }
+    ents.forEach((x, j) => {
+      const p = pay.per[x.id], t = TYPE[x.type];
+      body += `<tr>${j === 0 ? lbl(ents.length) : ''}
+        <td class="mono">${x.start}–${x.end}${x.brk ? `<span class="meta">${x.brk} min break</span>` : ''}</td>
+        <td><span class="chip ${t[0]}">${t[1]}</span>${x.opp ? ` <span class="mono small">${x.opp}</span>` : ''}${x.note ? `<span class="why">${esc(x.note)}</span>` : ''}</td>
+        <td class="r num">${h(entryHours(x))}</td><td class="r num">${h(p.st)}</td>
+        <td class="r num">${p.ot ? h(p.ot) : '–'}</td><td class="r num">${p.dt ? h(p.dt) : '–'}</td>
+        <td class="r">${canEdit ? `<button class="btn tiny ghost" data-act="del-entry" data-id="${x.id}">Remove</button>` : ''}</td></tr>`;
+    });
+  }
+  document.getElementById('tsheet').innerHTML = `<thead><tr><th>Day</th><th>Time</th><th>Type</th><th class="r">Hours</th><th class="r">Straight</th><th class="r">OT 1.5×</th><th class="r">OT 2×</th><th></th></tr></thead>
+    <tbody>${body}</tbody><tfoot><tr><td colspan="3">Week total</td><td class="r num">${h(pay.total)}</td><td class="r num">${h(pay.st)}</td><td class="r num">${h(pay.ot)}</td><td class="r num">${h(pay.dt)}</td><td></td></tr></tfoot>`;
+
+  document.getElementById('entryFs').disabled = !canEdit;
+  const dSel = document.getElementById('t-date'), keep = dSel.value;
+  dSel.innerHTML = Array.from({ length: 7 }, (_, i) => addDays(S.week, i)).map((d, i) => `<option value="${d}">${DOW[i]} ${d.slice(5)}</option>`).join('');
+  dSel.value = (keep >= S.week && keep <= addDays(S.week, 6)) ? keep : (TODAY >= S.week && TODAY <= addDays(S.week, 6) ? TODAY : S.week);
+  const opps = myOpps(S.me);
+  document.getElementById('t-opp').innerHTML = opps.length ? opps.map(o => `<option value="${o.id}">${o.id} · ${o.date} · ${esc(o.label)}</option>`).join('') : '<option value="">You have not accepted any call-list overtime</option>';
+  document.getElementById('t-opp-l').hidden = document.getElementById('t-type').value !== 'ot-list';
+  document.getElementById('submitWeek').disabled = !canEdit || !w.entries.length;
+  document.getElementById('submitHint').textContent = w.status === 'submitted' ? `Submitted ${w.submittedAt}. Locked until your supervisor decides.`
+    : w.status === 'approved' ? `Approved ${w.decidedAt}. Locked; a correction goes through your supervisor.` : 'Submitting locks the week and sends it to your supervisor.';
+
+  const subs = Object.entries(S.weeks).filter(([, x]) => x.status === 'submitted');
+  const done = Object.entries(S.weeks).filter(([, x]) => x.status === 'approved' || x.status === 'rejected').sort((a, b) => b[1].decidedAt.localeCompare(a[1].decidedAt)).slice(0, 8);
+  const cards = subs.map(([k, x]) => {
+    const e = emp(x.empId), p = payCalc(x);
+    return `<div class="appr">
+      <div class="opp-title"><h3>${esc(e.name)}</h3><span class="chip s-accent">Submitted ${esc(x.submittedAt)}</span></div>
+      <div class="facts">
+        <div class="fact"><span>Week</span><span>${x.ws}</span></div>
+        <div class="fact"><span>Hours</span><span>${h(p.total)}</span></div>
+        <div class="fact"><span>Straight</span><span>${h(p.st)}</span></div>
+        <div class="fact"><span>OT 1.5×</span><span>${h(p.ot)}</span></div>
+        <div class="fact"><span>OT 2×</span><span>${h(p.dt)}</span></div>
+      </div>
+      <ul class="issues">${issues(x).map(([c, t]) => `<li class="${c}">${esc(t)}</li>`).join('')}</ul>
+      <details><summary>${x.entries.length} entries</summary><div class="tbl-wrap"><table><tbody>${[...x.entries].sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start)).map(y =>
+        `<tr><td class="mono">${y.date}</td><td class="mono">${y.start}–${y.end}</td><td>${TYPE[y.type][1]}${y.opp ? ' · ' + y.opp : ''}</td><td class="r num">${h(entryHours(y))}</td></tr>`).join('')}</tbody></table></div></details>
+      <div class="acts">
+        <button class="btn primary" data-act="approve" data-key="${esc(k)}">Approve</button>
+        <label>Reason if returning<input id="rj-${esc(k)}" placeholder="e.g. Friday finish time looks wrong"></label>
+        <button class="btn no" data-act="reject" data-key="${esc(k)}">Return for changes</button>
+      </div></div>`;
+  }).join('');
+  const hist = done.map(([, x]) => `<tr><td>${esc(emp(x.empId).name)}</td><td class="mono">${x.ws}</td><td><span class="chip ${WSTAT[x.status][0]}">${WSTAT[x.status][1]}</span>${x.reason ? `<span class="why">${esc(x.reason)}</span>` : ''}</td><td class="mono">${esc(x.decidedAt)}</td></tr>`).join('');
+  document.getElementById('apprBox').innerHTML = `
+    <p class="small muted">The supervisor's queue. Approving locks the week and posts its overtime to the call-list ledger.</p>
+    ${cards ? `<div class="appr-list">${cards}</div>` : '<div class="callout ok">Nothing waiting for approval.</div>'}
+    ${hist ? `<h3>Recent decisions</h3><div class="tbl-wrap"><table><thead><tr><th>Person</th><th>Week</th><th>Decision</th><th>When</th></tr></thead><tbody>${hist}</tbody></table></div>` : ''}`;
+}
+
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+function load() { try { const v = localStorage.getItem(KEY); if (v) { S = JSON.parse(v); return true; } } catch (e) {} return false; }
+
+/* ---------- rendering ---------- */
+function chip(r, o) {
+  switch (r.outcome) {
+    case 'pending': return '<span class="chip s-accent">To call</span>';
+    case 'accepted': return `<span class="chip s-ok">Accepted · +${h(r.charged)} h</span>`;
+    case 'forced': return `<span class="chip s-bad">Forced · +${h(r.charged)} h</span>`;
+    case 'refused': return `<span class="chip s-warn">Refused · ${r.charged ? '+' + h(r.charged) + ' h' : 'not charged'}</span>`;
+    case 'noanswer': return `<span class="chip s-warn">No answer · ${r.charged ? '+' + h(r.charged) + ' h' : 'not charged'}</span>`;
+    case 'ineligible': return `<span class="chip s-neutral">Not eligible · 0 h</span><span class="why">${esc(r.why)}</span>`;
+    case 'notreached': return '<span class="chip s-neutral">Not reached</span>';
+  }
+  return '';
+}
+function renderTabs() {
+  document.getElementById('tabs').innerHTML = Object.entries(TRADES).map(([k, v]) =>
+    `<button type="button" data-act="tab" data-tab="${k}" aria-pressed="${S.tab === k}">${v}</button>`).join('');
+}
+function renderList() {
+  const list = ranked(S.tab);
+  const rows = list.map((x, i) => {
+    const t = totals(x.e.id), why = ineligible(x.e);
+    return `<tr class="${why ? 'dim' : ''}">
+      <td class="pos">${i + 1}</td>
+      <td class="who"><b>${esc(x.e.name)}</b><span class="meta mono">#${x.e.no} · since ${x.e.sen}</span></td>
+      <td class="r"><span class="num big">${h(t.total)}</span><span class="splits num" title="Worked · Refused · No answer · Start">W ${h(t.worked)} · R ${h(t.refused)} · NA ${h(t.noanswer)}${t.start ? ' · S ' + h(t.start) : ''}</span></td>
+      <td>${why ? `<span class="chip s-neutral">${x.e.onLeave ? 'On leave' : 'Rest rule'}</span><span class="why">${esc(why)}</span>` : '<span class="chip s-ok">Available</span>'}</td>
+      <td class="r"><button class="btn tiny ghost" data-act="leave" data-emp="${x.e.id}">${x.e.onLeave ? 'End leave' : 'Set leave'}</button></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('list').innerHTML =
+    `<thead><tr><th>#</th><th>Person</th><th class="r">Charged h</th><th>Status</th><th class="r"><span class="sr">Leave</span></th></tr></thead><tbody>${rows}</tbody>`;
+}
+function renderConsole() {
+  const sel = document.getElementById('oppSel');
+  sel.innerHTML = [...S.opps].reverse().map(o =>
+    `<option value="${o.id}" ${o.id === S.active ? 'selected' : ''}>${o.id} · ${esc(o.label)} (${o.status})</option>`).join('');
+  const o = oppById(S.active), box = document.getElementById('console');
+  if (!o) { box.innerHTML = '<p class="muted">No opportunity selected. Build one below.</p>'; return; }
+  const acc = o.rows.filter(r => r.outcome === 'accepted' || r.outcome === 'forced').length;
+  const firstPending = o.rows.find(r => r.outcome === 'pending');
+  const statusChip = { open: '<span class="chip s-accent">Calling</span>', filled: '<span class="chip s-ok">Filled</span>', short: '<span class="chip s-bad">Unfilled</span>' }[o.status];
+  const rows = o.rows.map(r => {
+    const e = emp(r.empId);
+    const acts = (o.status === 'open' && r.outcome === 'pending')
+      ? `<div class="acts"><button class="btn tiny ok" data-act="rec" data-out="accepted" data-emp="${r.empId}">Accept</button><button class="btn tiny no" data-act="rec" data-out="refused" data-emp="${r.empId}">Refuse</button><button class="btn tiny" data-act="rec" data-out="noanswer" data-emp="${r.empId}">No answer</button></div>`
+      : (r.ts ? `<span class="note mono">${esc(r.ts)}</span>` : '');
+    return `<tr class="${r === firstPending ? 'next' : ''} ${r.outcome === 'ineligible' || r.outcome === 'notreached' ? 'dim' : ''}">
+      <td class="pos">${r.pos}</td>
+      <td class="who"><b>${esc(e.name)}</b><span class="meta">${r === firstPending ? 'Next to call · ' : ''}<span class="mono">${h(r.chargedAt)} h</span> when listed</span>${r.skip ? `<span class="skipflag">Skip flagged: ${esc(r.skip)}</span>` : ''}</td>
+      <td>${chip(r, o)}</td>
+      <td class="r">${acts}</td></tr>`;
+  }).join('');
+  let foot = '';
+  if (o.status === 'filled') foot = `<div class="callout ok">Filled: ${acc} of ${o.needed} people. Everyone below the last acceptance was not reached and is not charged.</div>`;
+  else if (o.status === 'short') foot = `<div class="callout bad">Unfilled. Every eligible person has been called or forced. The next step is the neighboring crew's list.</div>`;
+  else if (!firstPending) foot = `<div class="callout warn"><span>Everyone eligible has been called and only ${acc} of ${o.needed} accepted.</span><button class="btn primary tiny" data-act="force">Force assign least senior</button></div>`;
+  else foot = `<p class="small muted">Call in order from the highlighted row. Recording an answer for someone lower down flags a skip against the people still waiting above them.</p>`;
+  box.innerHTML = `
+    <div class="opp-head">
+      <div class="opp-title"><h3>${esc(o.label)}</h3>${statusChip}</div>
+      <div class="facts">
+        <div class="fact"><span>Ref</span><span>${o.id}</span></div>
+        <div class="fact"><span>Trade</span><span>${TRADES[o.trade]}</span></div>
+        <div class="fact"><span>Date</span><span>${o.date}</span></div>
+        <div class="fact"><span>Hours</span><span>${h(o.hours)}</span></div>
+        <div class="fact"><span>Accepted</span><span>${acc} / ${o.needed}</span></div>
+        <div class="fact"><span>List built</span><span>${esc(o.created)}</span></div>
+      </div>
+    </div>
+    <div class="tbl-wrap"><table><thead><tr><th>#</th><th>Person · list as it stood</th><th>Outcome</th><th class="r">Record answer</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${foot}`;
+}
+function renderFair() {
+  document.getElementById('fair').innerHTML = Object.entries(TRADES).map(([k, v]) => {
+    const list = ranked(k).map(x => ({ e: x.e, t: totals(x.e.id) }));
+    const vals = list.map(x => Math.max(0, x.t.total));
+    const max = Math.max(...vals, 1), min = Math.min(...vals), mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const spread = max - min, tol = S.rules.tolerance;
+    const pill = spread <= tol
+      ? `<span class="chip s-ok">Spread ${h(spread)} h · within ${tol} h</span>`
+      : `<span class="chip s-bad">Spread ${h(spread)} h · ${h(spread - tol)} h over tolerance</span>`;
+    const rows = list.map(x => {
+      const seg = (kind) => x.t[kind] > 0 ? `<div class="seg ${kind}" style="width:${x.t[kind] / max * 100}%" title="${kind}: ${h(x.t[kind])} h"></div>` : '';
+      return `<div class="bar-row"><span class="nm">${esc(x.e.name)}</span>
+        <div class="track">${seg('start')}${seg('worked')}${seg('refused')}${seg('noanswer')}<span class="mean" style="left:${mean / max * 100}%"></span></div>
+        <span class="num r">${h(x.t.total)}</span></div>`;
+    }).join('');
+    return `<div class="fair-list"><div class="panel-head"><h3>${v}</h3>${pill}</div>${rows}
+      <p class="small muted">Average <span class="num">${h(mean)}</span> h · highest <span class="num">${h(max)}</span> · lowest <span class="num">${h(min)}</span></p></div>`;
+  }).join('');
+}
+function renderRules() {
+  for (const k of Object.keys(S.rules)) { const el = document.getElementById('r-' + k); if (el && document.activeElement !== el) el.value = S.rules[k]; }
+}
+function renderLedger(flashId) {
+  const KN = { worked: 'Worked', refused: 'Refused', noanswer: 'No answer', start: 'Start balance' };
+  const rows = [...S.ledger].reverse().map(r => {
+    const e = emp(r.empId);
+    const can = !r.reverses && !r.reversedBy && r.hours;
+    return `<tr class="${r.reverses || r.reversedBy ? 'rev' : ''} ${r.id === flashId ? 'flash' : ''}">
+      <td class="mono">#${r.id}</td><td class="mono">${esc(r.ts)}</td>
+      <td class="who"><b>${esc(e ? e.name : r.empId)}</b><span class="meta">${esc(r.oppId ? r.oppId + ' · ' : '')}${esc(r.label)}</span>${r.note ? `<span class="note ${r.note.includes('SKIP') ? 'flag' : ''}">${esc(r.note)}</span>` : ''}${r.reversedBy ? `<span class="note">Reversed by #${r.reversedBy}</span>` : ''}</td>
+      <td>${KN[r.kind]}</td>
+      <td class="r num ${r.hours < 0 ? 'neg' : ''}">${r.hours > 0 ? '+' : ''}${h(r.hours)}</td>
+      <td class="r">${can ? `<button class="btn tiny ghost" data-act="reverse" data-id="${r.id}">Reverse</button>` : ''}</td></tr>`;
+  }).join('');
+  document.getElementById('ledger').innerHTML = `<thead><tr><th>Entry</th><th>When</th><th>Person · work</th><th>Type</th><th class="r">Hours</th><th></th></tr></thead><tbody>${rows}</tbody>`;
+  document.getElementById('ledgerCount').textContent = S.ledger.length + ' entries';
+}
+function render(msg) {
+  renderTabs(); renderList(); renderConsole(); renderTime(); renderFair(); renderRules();
+  renderLedger(msg ? S.seq - 1 : null);
+  if (msg) document.getElementById('status').textContent = msg;
+  save();
+}
+
+/* ---------- events ---------- */
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-act]'); if (!b) return;
+  let msg = '';
+  switch (b.dataset.act) {
+    case 'tab': S.tab = b.dataset.tab; break;
+    case 'leave': { const e = emp(b.dataset.emp); e.onLeave = !e.onLeave; msg = `${e.name} ${e.onLeave ? 'is on leave and will be skipped without a charge' : 'is back and eligible'}.`; break; }
+    case 'rec': msg = record(S.active, b.dataset.emp, b.dataset.out); break;
+    case 'force': msg = force(S.active); break;
+    case 'reverse': msg = reverse(+b.dataset.id); break;
+    case 'reset': seed(); msg = 'Demo data reset.'; break;
+    case 'ttab': S.timeTab = b.dataset.tab; break;
+    case 'wk': S.week = addDays(S.week, +b.dataset.d); document.getElementById('t-errs').innerHTML = ''; break;
+    case 'del-entry': { const w = week(S.me, S.week); if (w && editable(w)) { w.entries = w.entries.filter(x => x.id !== b.dataset.id); msg = 'Entry removed.'; } break; }
+    case 'submit-week': msg = submitWeek(); break;
+    case 'approve': msg = approve(b.dataset.key); break;
+    case 'reject': { const inp = document.getElementById('rj-' + b.dataset.key); msg = reject(b.dataset.key, inp ? inp.value.trim() : ''); break; }
+    default: return;
+  }
+  render(msg);
+});
+document.getElementById('t-me').addEventListener('change', e => { S.me = e.target.value; document.getElementById('t-errs').innerHTML = ''; render(); });
+document.getElementById('t-type').addEventListener('change', e => {
+  document.getElementById('t-opp-l').hidden = e.target.value !== 'ot-list';
+  document.getElementById('t-brk').value = e.target.value === 'reg' ? 30 : 0;
+});
+document.getElementById('entry').addEventListener('submit', ev => {
+  ev.preventDefault();
+  const w = week(S.me, S.week, true); if (!editable(w)) return;
+  const x = {
+    id: 'T' + S.tseq, date: document.getElementById('t-date').value, start: document.getElementById('t-start').value,
+    end: document.getElementById('t-end').value, brk: Math.max(0, +document.getElementById('t-brk').value || 0),
+    type: document.getElementById('t-type').value, opp: '', note: document.getElementById('t-note').value.trim()
+  };
+  if (x.type === 'ot-list') x.opp = document.getElementById('t-opp').value;
+  const errs = validate(S.me, w, x);
+  document.getElementById('t-errs').innerHTML = errs.map(m => `<li>${esc(m)}</li>`).join('');
+  if (errs.length) return;
+  S.tseq++; w.entries.push(x); document.getElementById('t-note').value = '';
+  render(`Added ${h(entryHours(x))} h on ${x.date}.`);
+});
+document.getElementById('oppSel').addEventListener('change', e => { S.active = e.target.value; render(); });
+document.getElementById('newOpp').addEventListener('submit', e => {
+  e.preventDefault();
+  const o = createOpp({
+    label: document.getElementById('o-label').value.trim() || 'Overtime',
+    trade: document.getElementById('o-trade').value, date: document.getElementById('o-date').value,
+    hours: Math.max(0.5, +document.getElementById('o-hours').value || 1), needed: Math.max(1, +document.getElementById('o-need').value || 1)
+  });
+  S.active = o.id; S.tab = o.trade;
+  render(`${o.id} built from the ${TRADES[o.trade]} list as it stands now.`);
+});
+document.getElementById('rules').addEventListener('change', e => {
+  const k = e.target.id.replace('r-', ''); if (!(k in S.rules)) return;
+  S.rules[k] = e.target.type === 'number' ? Math.max(0, +e.target.value || 0) : e.target.value;
+  render('Rule updated. It applies from the next offer.');
+});
+document.getElementById('hire').addEventListener('submit', e => {
+  e.preventDefault();
+  const name = document.getElementById('h-name').value.trim(); if (!name) return;
+  const trade = document.getElementById('h-trade').value; S.tab = trade;
+  render(hire(name, trade));
+});
+
+if (!load()) seed();
+render();
+</script>
+</body>
+</html>
