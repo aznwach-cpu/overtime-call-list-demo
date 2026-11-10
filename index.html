@@ -238,7 +238,7 @@ fieldset:disabled{opacity:.55}
       <p class="standing" id="standing"></p>
       <div id="rejectNote"></div>
       <div class="tbl-wrap"><table class="tsheet" id="tsheet"></table></div>
-      <p class="small muted">Base time is 40 h a week. Every hour past 40 in the week is paid at 1.5×, in the order the hours were worked, whatever the entry type. A call-list job worked in a short week can therefore be paid at straight time, while it still counts on the call list. Daily rules are off by default and can be set under Rules.</p>
+      <p class="small muted">For hourly (non-exempt) staff, base time is 40 h a week. Every hour past 40 in the week is paid at 1.5×, in the order the hours were worked, whatever the entry type. A call-list job worked in a short week can therefore be paid at straight time, while it still counts on the call list. Daily rules are off by default and can be set under Rules.</p>
       <form id="entry">
         <fieldset id="entryFs" class="row">
           <label>Day<select id="t-date"></select></label>
@@ -313,7 +313,7 @@ fieldset:disabled{opacity:.55}
 </div>
 
 <script>
-const KEY = 'ot-call-list-demo-v3';
+const KEY = 'ot-call-list-demo-v4';
 const TRADES = { MECH: 'Mechanical', ELEC: 'Electrical' };
 const TODAY = '2026-11-10';
 let S;
@@ -414,7 +414,7 @@ function hire(name, trade) {
   if (S.rules.newHire === 'average' && list.length) { start = Math.round(list.reduce((a, b) => a + b, 0) / list.length * 2) / 2; note = 'Starting balance: list average'; }
   if (S.rules.newHire === 'highest' && list.length) { start = Math.max(...list) + 1; note = 'Starting balance: highest + 1'; }
   const id = 'n' + S.seq;
-  S.emps.push({ id, no: 11000 + S.emps.length, name, trade, sen: TODAY, rest: 24, onLeave: false });
+  S.emps.push({ id, no: 11000 + S.emps.length, name, trade, sen: TODAY, rest: 24, onLeave: false, rate: 32.00 });
   addL(id, 'start', start, '', '', note);
   return `${name} joins the ${TRADES[trade]} list at ${h(start)} h.`;
 }
@@ -436,8 +436,10 @@ function seed() {
   E('e3', 10509, 'Samir Haddad', 'ELEC', '2017-07-17', 24, true);
   E('e4', 10688, 'Olivia Brandt', 'ELEC', '2020-11-09', 17);
   E('e5', 10802, 'Jordan Pike', 'ELEC', '2022-04-04', 21);
+  const RATE = { m1: 41.50, m2: 39.75, m3: 38.20, m4: 37.10, m5: 35.40, m6: 33.60, m7: 32.25, e1: 43.10, e2: 41.00, e3: 38.90, e4: 36.40, e5: 34.75 };
+  S.emps.forEach(e => e.rate = RATE[e.id]);
   const H = {
-    m1: 'W12 W8 W10 W12 W10 W10 R8', m2: 'W10 W12 W8 W10 R12 N4', m3: 'W12 W10 W8 W12 W10',
+    m1:'W12 W8 W10 W12 W10 W10 R8', m2: 'W10 W12 W8 W10 R12 N4', m3: 'W12 W10 W8 W12 W10',
     m4: 'W12 W8 W12 W12 R8', m5: 'W12 W12 W12 R12', m6: 'W10 W12 W8 N4', m7: 'S38 W8',
     e1: 'W12 W10 W12 W12 W12', e2: 'W12 W12 W12 R8 R8', e3: 'W12 W12 W10 W10', e4: 'W10 W10 W10 W10 N4', e5: 'W12 W8 W10 W8'
   };
@@ -513,8 +515,12 @@ function payCalc(w) {
     out.st += st; out.ot += ot; out.dt += dt;
   }
   out.total = out.st + out.ot + out.dt;
+  const rate = (emp(w.empId) || {}).rate || 0;
+  out.rate = rate; out.paySt = out.st * rate; out.payOt = out.ot * rate * 1.5; out.payDt = out.dt * rate * 2;
+  out.gross = out.paySt + out.payOt + out.payDt;
   return out;
 }
+const usd = n => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 function myOpps(id) { return S.opps.filter(o => o.rows.some(r => r.empId === id && (r.outcome === 'accepted' || r.outcome === 'forced'))); }
 function validate(id, w, x, ignoreId) {
   const errs = [];
@@ -596,13 +602,13 @@ function renderTime() {
 
   const me = emp(S.me) || S.emps[0]; S.me = me.id;
   document.getElementById('t-me').innerHTML = S.emps.map(e => `<option value="${e.id}" ${e.id === S.me ? 'selected' : ''}>${esc(e.name)} · ${TRADES[e.trade]}</option>`).join('');
-  const w = week(S.me, S.week) || { status: 'draft', entries: [], reason: '' }, canEdit = editable(w);
+  const w = week(S.me, S.week) || { empId: S.me, status: 'draft', entries: [], reason: '' }, canEdit = editable(w);
   document.getElementById('weekLabel').textContent = `${S.week} to ${addDays(S.week, 6)}`;
   const st = WSTAT[w.status];
   document.getElementById('weekStatus').innerHTML = `<span class="chip ${st[0]}">${st[1]}</span>`;
 
   const list = ranked(me.trade), pos = list.findIndex(x => x.e.id === me.id) + 1;
-  let sl = `You are <b>#${pos} of ${list.length}</b> on the ${TRADES[me.trade]} call list with <b class="num">${h(list[pos - 1].c)} h</b> charged.`;
+  let sl = `Hourly, non-exempt · <b class="num">${usd(me.rate || 0)}</b>/h, 1.5× after ${S.rules.weeklyOT} h a week. You are <b>#${pos} of ${list.length}</b> on the ${TRADES[me.trade]} call list with <b class="num">${h(list[pos - 1].c)} h</b> charged.`;
   if (pos === 1) sl += ' You will be offered the next overtime first if you are eligible.';
   S.opps.filter(o => o.status === 'open').forEach(o => { const r = o.rows.find(y => y.empId === me.id && y.outcome === 'pending'); if (r) sl += ` ${o.id} (${o.date}) is being called now, and you are #${r.pos} on it.`; });
   document.getElementById('standing').innerHTML = sl;
@@ -624,7 +630,8 @@ function renderTime() {
     });
   }
   document.getElementById('tsheet').innerHTML = `<thead><tr><th>Day</th><th>Time</th><th>Type</th><th class="r">Hours</th><th class="r">Straight</th><th class="r">OT 1.5×</th><th class="r">OT 2×</th><th></th></tr></thead>
-    <tbody>${body}</tbody><tfoot><tr><td colspan="3">Week total</td><td class="r num">${h(pay.total)}</td><td class="r num">${h(pay.st)}</td><td class="r num">${h(pay.ot)}</td><td class="r num">${h(pay.dt)}</td><td></td></tr></tfoot>`;
+    <tbody>${body}</tbody><tfoot><tr><td colspan="3">Week total</td><td class="r num">${h(pay.total)}</td><td class="r num">${h(pay.st)}</td><td class="r num">${h(pay.ot)}</td><td class="r num">${h(pay.dt)}</td><td></td></tr>
+    <tr><td colspan="3">Gross pay at ${usd(pay.rate)}/h</td><td class="r num">${usd(pay.gross)}</td><td class="r num">${usd(pay.paySt)}</td><td class="r num">${usd(pay.payOt)}</td><td class="r num">${usd(pay.payDt)}</td><td></td></tr></tfoot>`;
 
   document.getElementById('entryFs').disabled = !canEdit;
   const dSel = document.getElementById('t-date'), keep = dSel.value;
@@ -649,6 +656,8 @@ function renderTime() {
         <div class="fact"><span>Straight</span><span>${h(p.st)}</span></div>
         <div class="fact"><span>OT 1.5×</span><span>${h(p.ot)}</span></div>
         <div class="fact"><span>OT 2×</span><span>${h(p.dt)}</span></div>
+        <div class="fact"><span>Gross pay</span><span>${usd(p.gross)}</span></div>
+        <div class="fact"><span>OT cost</span><span>${usd(p.payOt + p.payDt)}</span></div>
       </div>
       <ul class="issues">${issues(x).map(([c, t]) => `<li class="${c}">${esc(t)}</li>`).join('')}</ul>
       <details><summary>${x.entries.length} entries</summary><div class="tbl-wrap"><table><tbody>${[...x.entries].sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start)).map(y =>
